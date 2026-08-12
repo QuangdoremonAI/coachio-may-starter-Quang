@@ -15,6 +15,12 @@
 .openclaw/media/
 .openclaw/tmp/
 
+# ===== Bé Giản (gian-chat) =====
+gian-chat/.env
+gian-chat/.venv/
+gian-chat/data/
+gian-chat/*.db
+
 # ===== Rác =====
 **/__pycache__/
 **/*.pyc
