@@ -24,8 +24,17 @@ cp .env.example .env          # rồi mở ra điền DEEPSEEK_API_KEY
 
 Mở **http://localhost:8000/test** → bong bóng chat hiện góc dưới phải.
 
+> Trang `/test` chỉ mở khi `PUBLIC_DOCS=true` (mặc định trong `.env.example`).
+> Lên thật thì đặt `false`, nó tự 404 cùng với `/docs`.
+
 > `smoke_test.py` thay model thật bằng model giả nên chạy bao nhiêu lần cũng
 > không mất tiền. Chạy nó **sau mỗi lần sửa code**, trước khi deploy.
+
+Sửa `widget.js` xong thì build lại bản minify:
+
+```bash
+bash scripts/build_widget.sh
+```
 
 ---
 
@@ -151,13 +160,39 @@ Hệ quả: file đó trống thì bot không nói được con số nào. `chec
 
 ---
 
+## 🔒 Chống rò rỉ
+
+Toàn bộ bài phân tích hệ MONA lấy được trong 10 phút chỉ nhờ **hai chỗ họ để hở**:
+`/openapi.json` public, và `widget.js` ship không minify với đầy comment nội bộ —
+lộ cả tên khách hàng lẫn số liệu lead thật. Hệ này bịt sẵn đúng những chỗ đó,
+và `smoke_test.py` kiểm lại mỗi lần chạy.
+
+| Chỗ hở | Ở đây xử lý thế nào |
+|---|---|
+| `/openapi.json`, `/docs` | Tắt mặc định. `PUBLIC_DOCS=false` là 404. |
+| Trang thử `/test` | Cũng tắt theo `PUBLIC_DOCS` — không để hở trang debug. |
+| `widget.js` lộ comment | Server **ưu tiên `widget.min.js`**. Build script tự kiểm: lọt `[CONTEXT]` hoặc sót comment là fail. |
+| Prompt nằm ở client | Nội dung `[CONTEXT]` để **hết ở server** (`core/prompt.py`). Widget chỉ gửi token kiểu `/_nudge_` — đọc bản minify không suy ra được prompt. |
+| Đọc trộm hội thoại người khác | `/history` nhận `visitor_id` trần, nên id sinh bằng `crypto.randomUUID` (122 bit). Không đoán được, khác `Math.random()` chỉ ~40 bit. |
+| Lỗi lộ nội bộ | Event `error` chỉ trả `upstream_error`. Chi tiết vào log server. |
+| Đốt tiền API / ngập Telegram | Rate limit theo IP: `/chat` 20 lượt/phút, `/lead` 5 lượt/5 phút. |
+
+Còn một chỗ **chưa bịt**, nói rõ để anh biết mà quyết: `/history` và
+`/chat/agent-pull` chưa có xác thực — ai cầm được `visitor_id` hoặc
+`session_id` của người khác thì đọc được hội thoại của họ. Hiện chỉ dựa vào
+việc id không đoán nổi. Muốn chặt hơn thì ký id bằng HMAC và kiểm chữ ký;
+ở mức một site tư vấn thì em thấy chưa cần, nhưng đây là lựa chọn của anh.
+
+---
+
 ## ⚠️ Trước khi cho chạy công khai
 
-- [ ] `PUBLIC_DOCS=false` — kiểm `curl https://<domain>/openapi.json` phải ra **404**
+- [ ] `PUBLIC_DOCS=false` — kiểm `curl https://<domain>/openapi.json` ra **404**
+- [ ] `curl https://<domain>/test` cũng phải ra **404**
 - [ ] `ALLOWED_ORIGINS` điền đúng domain, không để `*`
-- [ ] **Minify `widget.js`** — MONA ship bản không minify và lộ sạch spec nội bộ
-      lẫn số liệu kinh doanh thật
+- [ ] `bash scripts/build_widget.sh` — có `widget.min.js` mới hơn `widget.js`
 - [ ] `TELEGRAM_WEBHOOK_SECRET` đổi thành chuỗi ngẫu nhiên
+- [ ] `python scripts/smoke_test.py` xanh hết, kể cả mục 🔒
 - [ ] `check_kb.py` không còn báo đỏ
 - [ ] Chạy hết checklist nghiệm thu trong `../CHATBOT-WEB-AQUANG.md` (mục B10)
 

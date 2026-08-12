@@ -77,8 +77,20 @@
     } catch (_) {}
     return null;
   }
+  // ID phải KHÔNG ĐOÁN ĐƯỢC: /history nhận visitor_id trần, ai biết id là đọc
+  // được hội thoại của người đó. Math.random() cho ~40 bit — đoán được.
+  // crypto cho 122 bit — không.
   function uid(p) {
-    return p + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    try {
+      if (crypto.randomUUID) return p + "_" + crypto.randomUUID().replace(/-/g, "");
+      const a = new Uint8Array(16);
+      crypto.getRandomValues(a);
+      return p + "_" + Array.from(a, function (b) {
+        return b.toString(16).padStart(2, "0");
+      }).join("");
+    } catch (_) {
+      return p + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    }
   }
 
   let visitorId = ls(K_VISITOR);

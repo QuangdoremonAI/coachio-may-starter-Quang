@@ -8,10 +8,11 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse
 
+from app import ratelimit
 from app.config import ALLOWED_ORIGINS, BOT_NAME, PUBLIC_DOCS, TELEGRAM_WEBHOOK_SECRET
 from app.core import guard, rag, telegram
 from app.db import init_db
@@ -55,6 +56,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
+@app.middleware("http")
+async def _rate_limit(request: Request, call_next):
+    try:
+        ratelimit.check(request)
+    except HTTPException as e:
+        return JSONResponse({"detail": e.detail}, status_code=e.status_code)
+    return await call_next(request)
+
+
 app.include_router(chat.router)
 app.include_router(history.router)
 app.include_router(agent.router)
@@ -68,15 +80,23 @@ async def healthz():
 
 @app.get("/widget.js")
 async def widget():
-    """Serve widget cho web nhúng. Nhớ minify trước khi lên thật."""
+    """Ưu tiên bản đã minify. Bản nguồn còn nguyên comment giải thích cách
+    hệ hoạt động — đúng thứ MONA để lộ. Chạy scripts/build_widget.sh để tạo
+    widget.min.js; có file đó thì bản nguồn không bao giờ ra ngoài."""
+    minified = STATIC_DIR / "widget.min.js"
+    path = minified if minified.exists() else STATIC_DIR / "widget.js"
+    if not minified.exists():
+        log.warning("Đang serve widget.js CHƯA MINIFY — chạy scripts/build_widget.sh")
     return FileResponse(
-        STATIC_DIR / "widget.js",
+        path,
         media_type="application/javascript",
         headers={"Cache-Control": "public, max-age=300"},
     )
 
 
-@app.get("/test", response_class=PlainTextResponse)
+@app.get("/test")
 async def test_page():
-    """Trang thử nhanh — mở /test là chat được, khỏi cần website."""
+    """Trang thử. Chỉ mở khi PUBLIC_DOCS=true — lên thật thì tắt cùng /docs."""
+    if not PUBLIC_DOCS:
+        raise HTTPException(status_code=404)
     return FileResponse(STATIC_DIR / "test.html", media_type="text/html")

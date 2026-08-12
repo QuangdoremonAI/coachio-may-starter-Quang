@@ -170,7 +170,38 @@ check("form lead chạy", lead.get("ok") is True)
 hz = client.get("/healthz").json()
 check("healthz báo KB", hz["kb"]["chunks"] > 0, str(hz))
 
+print("\n🔒 Kiểm rò rỉ — đúng hai chỗ MONA làm hỏng\n")
+
 check("openapi bị tắt", client.get("/openapi.json").status_code == 404)
+check("/docs bị tắt", client.get("/docs").status_code == 404)
+check("trang /test không lộ ra ngoài", client.get("/test").status_code == 404)
+
+static = Path(__file__).resolve().parent.parent / "app" / "static"
+src, mini = static / "widget.js", static / "widget.min.js"
+check("đã có bản widget minify", mini.exists(),
+      "chạy bash scripts/build_widget.sh")
+if mini.exists():
+    check("bản minify không cũ hơn nguồn",
+          mini.stat().st_mtime >= src.stat().st_mtime,
+          "widget.js đã sửa — build lại đi")
+    body = mini.read_text(encoding="utf-8")
+    check("minify không lọt nội dung prompt", "[CONTEXT]" not in body)
+    check("minify không sót comment", "// " not in body)
+    served = client.get("/widget.js").text
+    check("server phục vụ bản minify", served == body)
+
+# ID phải không đoán được: /history nhận visitor_id trần
+check("widget sinh id bằng crypto", "crypto.randomUUID" in src.read_text(encoding="utf-8"))
+
+evs5 = post_chat("test lỗi", session=sid)  # model giả nên không lỗi; kiểm hình dạng
+check("event error không mang chi tiết nội bộ",
+      all(p.get("message", "") in ("", "upstream_error")
+          for e, p in evs5 if e == "error"))
+
+burst = [client.post("/lead", json={"visitor_id": f"v_spam{i}", "sdt": "0900000000"})
+         for i in range(8)]
+check("chặn được spam /lead", any(r.status_code == 429 for r in burst),
+      f"mã trả về: {[r.status_code for r in burst]}")
 
 _cm.__exit__(None, None, None)
 

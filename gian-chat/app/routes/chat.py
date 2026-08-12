@@ -76,10 +76,13 @@ async def chat(req: ChatRequest):
         tier = llm.pick_tier(message, sess.turn_count)
         try:
             answer = await llm.complete(messages, tier=tier)
-        except Exception as e:  # noqa: BLE001
-            log.error("LLM lỗi: %s", e)
+        except Exception:  # noqa: BLE001
+            # Log đầy đủ cho mình; gửi ra trình duyệt CHỈ câu chung chung.
+            # str(e) của httpx có URL nhà cung cấp, đôi khi cả header — không
+            # có lý do gì để khách lạ đọc được nội bộ hệ thống.
+            log.exception("LLM lỗi · session=%s · tier=%s", sess.id, tier)
             yield sse("message", {"text": ERROR_TEXT})
-            yield sse("error", {"message": str(e)[:200]})
+            yield sse("error", {"message": "upstream_error"})
             yield sse("done", {})
             return
 
